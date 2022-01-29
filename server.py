@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import datetime
 import faker
 import json
 import sqlite3
@@ -19,8 +20,13 @@ class Client:
     def uuid(self):
         return self._uuid
 
-    async def update_name(self, name):
-        await self._sock.send(json.dumps({"cmd": ["update_name", name]}))
+    async def get_user_name(self, name):
+        res = ["get_user_name", name]
+        await self.send_response([res])
+
+    async def send_response(self, res):
+        Logger.info(f"Sending response to {self.uuid}: {res}")
+        await self._sock.send(json.dumps({"res": res }))
 
 class DbManager:
     def __init__(self):
@@ -41,6 +47,9 @@ class DbManager:
     def __del__(self):
         self._con.close()
 
+class ClientConnectionException(Exception):
+    pass
+
 class Server:
     def __init__(self):
         self._clients = {}
@@ -49,7 +58,7 @@ class Server:
         pass
 
     async def handle_client(self, websocket, path):
-        print("Client connection request...")
+        Logger.log("Client connection request...")
         me = None
         try:
             async for message in websocket:
@@ -59,26 +68,50 @@ class Server:
                     message = None
                 if message is not None:
                     if me:
-                        if "cmd" in message:
-                            for cmd in message["cmd"]:
-                                if cmd[0] == "get_name":
-                                    await me.update_name(self._db.get_user_name(me.uuid))
+                        if "req" in message:
+                            for req in message["req"]:
+                                Logger.info(f"Received request from {me.uuid}: {req}")
+                                if req[0] == "get_user_name":
+                                    await me.get_user_name(self._db.get_user_name(me.uuid))
                         else:
-                            print(f"invalid message from {me.uuid}: {message}")
+                            Logger.error(f"Invalid request from {me.uuid}: {message}")
 
                     elif "uuid" in message:
                         me = Client(message["uuid"], websocket)
                         self._db.connect(me.uuid)
                         self._clients[me.uuid] = me
+                        Logger.info(f"Client connected: {me.uuid}")
                     else:
-                        print("Invalid Connection Request")
-                        raise Exception
+                        raise ClientConnectionException
+        except ClientConnectionException:
+            await websocket.send(json.dumps({"res": ["error", "connection_refused"]}))
+            Logger.error("Invalid connection request, client kicked...")
         except websockets.exceptions.ConnectionClosedError:
             if me:
                 # TODO implement client disconnect
                 self._clients.pop(me.uuid)
-            print("Client disconnected...")
+                Logger.info(f"Client disconnected: {me.uuid}")
+            else:
+                Logger.log("Unknown client disconnected...")
 
+class Logger:
+    colors = {
+        "error": "\033[31m",
+        "info": "\033[96m",
+        "reset": "\033[0m",
+    }
+
+    @staticmethod
+    def log(message):
+        print(f"{Logger.colors['reset']}[LOG] {datetime.datetime.now()} {message}")
+
+    @staticmethod
+    def info(message):
+        print(f"{Logger.colors['info']}[INFO] {datetime.datetime.now()} {message}")
+
+    @staticmethod
+    def error(message):
+        print(f"{Logger.colors['error']}[ERROR] {datetime.datetime.now()} {message}{Logger.colors['error']}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -89,7 +122,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    print(f"Server starting at {args.host}:{args.port}...")
+    Logger.log(f"Server starting at {args.host}:{args.port}...")
 
     server = Server()
 
@@ -100,4 +133,4 @@ if __name__ == "__main__":
     try:
         asyncio.get_event_loop().run_forever()
     except KeyboardInterrupt:
-        print("Server shutting down...")
+        Logger.log("Server shutting down...")
