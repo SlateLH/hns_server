@@ -80,6 +80,9 @@ class Server:
         for lp in lobby_players:
             await lp.send_response(res)
 
+    async def broadcast_clients(self):
+        await self.broadcast([["get_lobby_players", [[lp.uuid, lp.name, lp.is_ready] for lp in list(self._clients.values())]]])
+
     async def handle_client(self, websocket, path):
         Logger.log("Client connection request...")
         me = None
@@ -105,7 +108,7 @@ class Server:
                         self._clients[me.uuid] = me
                         Logger.info(f"Client connected: {me.uuid}")
                         await me.join_server(self._db.get_user_name(me.uuid))
-                        await self.broadcast([["get_lobby_players", [[lp.uuid, lp.name, lp.is_ready] for lp in list(self._clients.values())]]])
+                        await self.broadcast_clients()
                     else:
                         raise ClientConnectionException
         except ClientConnectionException:
@@ -118,6 +121,8 @@ class Server:
                 Logger.info(f"Client disconnected: {me.uuid}")
             else:
                 Logger.log("Unknown client disconnected...")
+
+            await self.broadcast_clients()
 
 class Logger:
     colors = {
