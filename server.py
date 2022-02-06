@@ -15,10 +15,27 @@ class Client:
     def __init__(self, uuid: str, websocket):
         self._uuid = uuid
         self._sock = websocket
+        self._name = None
+        self._is_ready = False
 
     @property
     def uuid(self):
         return self._uuid
+
+    @property
+    def name(self):
+        return self._name
+
+    @property
+    def is_ready(self):
+        return self._is_ready
+
+    async def join_server(self, name):
+        self._name = name
+
+        res = ["join_server", self.uuid, name]
+
+        await self.send_response([res])
 
     async def get_user_name(self, name):
         res = ["get_user_name", name]
@@ -57,6 +74,12 @@ class Server:
         self._db = DbManager()
         pass
 
+    async def broadcast(self, res):
+        lobby_players = list(self._clients.values())
+
+        for lp in lobby_players:
+            await lp.send_response(res)
+
     async def handle_client(self, websocket, path):
         Logger.log("Client connection request...")
         me = None
@@ -81,6 +104,8 @@ class Server:
                         self._db.connect(me.uuid)
                         self._clients[me.uuid] = me
                         Logger.info(f"Client connected: {me.uuid}")
+                        await me.join_server(self._db.get_user_name(me.uuid))
+                        await self.broadcast([["get_lobby_players", [[lp.uuid, lp.name, lp.is_ready] for lp in list(self._clients.values())]]])
                     else:
                         raise ClientConnectionException
         except ClientConnectionException:
