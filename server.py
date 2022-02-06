@@ -1,13 +1,16 @@
 import argparse
 import asyncio
-import datetime
 import faker
 import json
+import logging
 import sqlite3
+import sys
 import websockets
 
 DEFAULT_HOST = "0.0.0.0"
 DEFAULT_PORT = 42069
+DEFAULT_LOGLEVEL = logging.WARNING
+DEFAULT_LOGFORMAT = "[%(levelname)s] %(asctime)s %(message)s"
 
 fake = faker.Faker()
 
@@ -42,7 +45,7 @@ class Client:
         await self.send_response([res])
 
     async def send_response(self, res):
-        Logger.info(f"Sending response to {self.uuid}: {res}")
+        logging.info(f"sending response to {self.uuid}: {res}")
         await self._sock.send(json.dumps({"res": res }))
 
 class DbManager:
@@ -84,7 +87,7 @@ class Server:
         await self.broadcast([["get_lobby_players", [[lp.uuid, lp.name, lp.is_ready] for lp in list(self._clients.values())]]])
 
     async def handle_client(self, websocket, path):
-        Logger.log("Client connection request...")
+        logging.info("client connection request")
         me = None
         try:
             async for message in websocket:
@@ -96,52 +99,33 @@ class Server:
                     if me:
                         if "req" in message:
                             for req in message["req"]:
-                                Logger.info(f"Received request from {me.uuid}: {req}")
+                                logging.info(f"received request from {me.uuid}: {req}")
                                 if req[0] == "get_user_name":
                                     await me.get_user_name(self._db.get_user_name(me.uuid))
                         else:
-                            Logger.error(f"Invalid request from {me.uuid}: {message}")
+                            logging.warning(f"invalid request from {me.uuid}: {message}")
 
                     elif "uuid" in message:
                         me = Client(message["uuid"], websocket)
                         self._db.connect(me.uuid)
                         self._clients[me.uuid] = me
-                        Logger.info(f"Client connected: {me.uuid}")
+                        logging.info(f"client connected: {me.uuid}")
                         await me.join_server(self._db.get_user_name(me.uuid))
                         await self.broadcast_clients()
                     else:
                         raise ClientConnectionException
         except ClientConnectionException:
             await websocket.send(json.dumps({"res": ["error", "connection_refused"]}))
-            Logger.error("Invalid connection request, client kicked...")
+            logging.warning("invalid connection request, client kicked")
         except websockets.exceptions.ConnectionClosedError:
             if me:
                 # TODO implement client disconnect
                 self._clients.pop(me.uuid)
-                Logger.info(f"Client disconnected: {me.uuid}")
+                logging.info(f"client disconnected: {me.uuid}")
             else:
-                Logger.log("Unknown client disconnected...")
+                logging.info("unknown client disconnected")
 
             await self.broadcast_clients()
-
-class Logger:
-    colors = {
-        "error": "\033[31m",
-        "info": "\033[96m",
-        "reset": "\033[0m",
-    }
-
-    @staticmethod
-    def log(message):
-        print(f"{Logger.colors['reset']}[LOG] {datetime.datetime.now()} {message}")
-
-    @staticmethod
-    def info(message):
-        print(f"{Logger.colors['info']}[INFO] {datetime.datetime.now()} {message}")
-
-    @staticmethod
-    def error(message):
-        print(f"{Logger.colors['error']}[ERROR] {datetime.datetime.now()} {message}{Logger.colors['error']}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -149,10 +133,17 @@ if __name__ == "__main__":
                         help="Host to bind to (default: {DEFAULT_HOST})")
     parser.add_argument("--port", type=int, nargs="?", default=DEFAULT_PORT,
                         help=f"Port to listen on (default: {DEFAULT_PORT})")
+    parser.add_argument("--loglevel", type=str, nargs="?", default=DEFAULT_LOGLEVEL,
+                        help=f"The lowest severity of messages to log (default: {DEFAULT_LOGLEVEL})")
 
     args = parser.parse_args()
 
-    Logger.log(f"Server starting at {args.host}:{args.port}...")
+    console = logging.StreamHandler()
+    console.setLevel(args.loglevel)
+    console.setFormatter(logging.Formatter(DEFAULT_LOGFORMAT))
+
+    logging.basicConfig(level=args.loglevel, filemode="a", filename=".log", format=DEFAULT_LOGFORMAT)
+    logging.getLogger().addHandler(console)
 
     server = Server()
 
@@ -163,4 +154,4 @@ if __name__ == "__main__":
     try:
         asyncio.get_event_loop().run_forever()
     except KeyboardInterrupt:
-        Logger.log("Server shutting down...")
+        logging.info("server shutting down")
