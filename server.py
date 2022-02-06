@@ -33,11 +33,14 @@ class Client:
     def is_ready(self):
         return self._is_ready
 
+    @is_ready.setter
+    def is_ready(self, is_ready):
+        self._is_ready = is_ready
+
     async def join_server(self, name):
         self._name = name
 
         res = ["join_server", self.uuid, name]
-
         await self.send_response([res])
 
     async def get_user_name(self, name):
@@ -86,6 +89,9 @@ class Server:
     async def broadcast_clients(self):
         await self.broadcast([["get_lobby_players", [[lp.uuid, lp.name, lp.is_ready] for lp in list(self._clients.values())]]])
 
+    async def broadcast_update_is_ready(self, uuid, is_ready):
+        await self.broadcast([["update_is_ready", uuid, is_ready]])
+
     async def handle_client(self, websocket, path):
         logging.info("client connection request")
         me = None
@@ -102,6 +108,9 @@ class Server:
                                 logging.info(f"received request from {me.uuid}: {req}")
                                 if req[0] == "get_user_name":
                                     await me.get_user_name(self._db.get_user_name(me.uuid))
+                                elif req[0] == "update_is_ready":
+                                    me.is_ready = req[1]
+                                    await self.broadcast_update_is_ready(me.uuid, me.is_ready)
                         else:
                             logging.warning(f"invalid request from {me.uuid}: {message}")
 
