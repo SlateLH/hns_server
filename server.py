@@ -21,6 +21,7 @@ class Client:
         self._sock = websocket
         self._name = None
         self._is_ready = False
+        self._is_leader = False
 
     @property
     def uuid(self):
@@ -38,10 +39,18 @@ class Client:
     def is_ready(self, is_ready):
         self._is_ready = is_ready
 
+    @property
+    def is_leader(self):
+        return self._is_leader
+
+    @is_leader.setter
+    def is_leader(self, is_leader):
+        self._is_leader = is_leader
+
     async def join_server(self, name):
         self._name = name
 
-        res = ["join_server", self.uuid, name]
+        res = ["join_server", self.uuid, name, self.is_leader]
         await self.send_response([res])
 
     async def get_user_name(self, name):
@@ -88,7 +97,7 @@ class Server:
             await lp.send_response(res)
 
     async def broadcast_clients(self):
-        await self.broadcast([["get_lobby_players", [[lp.uuid, lp.name, lp.is_ready] for lp in list(self._clients.values())]]])
+        await self.broadcast([["get_lobby_players", [[lp.uuid, lp.name, lp.is_ready, lp.is_leader] for lp in list(self._clients.values())]]])
 
     async def broadcast_update_is_ready(self, uuid, is_ready):
         await self.broadcast([["update_is_ready", uuid, is_ready]])
@@ -123,6 +132,10 @@ class Server:
                     elif "uuid" in message:
                         me = Client(message["uuid"], websocket)
                         self._db.connect(me.uuid)
+
+                        if len(self._clients) == 0:
+                            me.is_leader = True
+
                         self._clients[me.uuid] = me
                         logging.info(f"client connected: {me.uuid}")
                         await me.join_server(self._db.get_user_name(me.uuid))
@@ -136,6 +149,10 @@ class Server:
             if me:
                 # TODO implement client disconnect
                 self._clients.pop(me.uuid)
+
+                if me.is_leader and len(self._clients) > 0:
+                    list(self._clients.values())[0].is_leader = True
+
                 logging.info(f"client disconnected: {me.uuid}")
             else:
                 logging.info("unknown client disconnected")
