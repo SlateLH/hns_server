@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import datetime
 import faker
 import json
 import logging
@@ -59,7 +60,7 @@ class DbManager:
         self._con.commit()
 
     def connect(self, uuid):
-        name = f"{fake.safe_color_name().title()}{fake.first_name().title()}"
+        name = f"{fake.safe_color_name().title()}{fake.word().title()}"
         self._cur.execute(f'''INSERT OR IGNORE INTO users(uuid, name) VALUES(\"{uuid}\", \"{name}\")''')
         self._con.commit()
 
@@ -92,6 +93,9 @@ class Server:
     async def broadcast_update_is_ready(self, uuid, is_ready):
         await self.broadcast([["update_is_ready", uuid, is_ready]])
 
+    async def broadcast_chat(self, name, message, time):
+        await self.broadcast([["chat", name, message, time]])
+
     async def handle_client(self, websocket, path):
         logging.info("client connection request")
         me = None
@@ -111,6 +115,8 @@ class Server:
                                 elif req[0] == "update_is_ready":
                                     me.is_ready = req[1]
                                     await self.broadcast_update_is_ready(me.uuid, me.is_ready)
+                                elif req[0] == "chat":
+                                    await self.broadcast_chat(me.name, req[1], datetime.datetime.now().strftime("%I:%M %p"))
                         else:
                             logging.warning(f"invalid request from {me.uuid}: {message}")
 
