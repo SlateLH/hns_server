@@ -60,7 +60,7 @@ class DbManager:
         self._con.commit()
 
     def connect(self, uuid):
-        name = f"{fake.safe_color_name().title()}{fake.word().title()}"
+        name = f"{fake.safe_color_name().title()} {fake.word().title()}"
         self._cur.execute(f'''INSERT OR IGNORE INTO users(uuid, name) VALUES(\"{uuid}\", \"{name}\")''')
         self._con.commit()
 
