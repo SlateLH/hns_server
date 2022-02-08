@@ -81,7 +81,17 @@ class DbManager:
         self._con.close()
 
 class ClientConnectionException(Exception):
-    pass
+    def __init__(self, code, message):
+        self._code = code
+        self._message = message
+
+    @property
+    def code(self):
+        return self._code
+
+    @property
+    def message(self):
+        return self._message
 
 class Server:
     def __init__(self):
@@ -130,7 +140,12 @@ class Server:
                             logging.warning(f"invalid request from {me.uuid}: {message}")
 
                     elif "uuid" in message:
-                        me = Client(message["uuid"], websocket)
+                        uuid = message["uuid"]
+
+                        if uuid in self._clients:
+                            raise ClientConnectionException("connection_refused", "client already connected")
+
+                        me = Client(uuid, websocket)
                         self._db.connect(me.uuid)
 
                         if len(self._clients) == 0:
@@ -141,13 +156,12 @@ class Server:
                         await me.join_server(self._db.get_user_name(me.uuid))
                         await self.broadcast_clients()
                     else:
-                        raise ClientConnectionException
-        except ClientConnectionException:
-            await websocket.send(json.dumps({"res": ["error", "connection_refused"]}))
-            logging.warning("invalid connection request, client kicked")
+                        raise ClientConnectionException("connection_refused", "no uuid provided")
+        except ClientConnectionException as e:
+            await websocket.send(json.dumps({"res": ["error", e.code, e.message]}))
+            logging.warning(f"invalid connection request, client kicked ({e.code}: {e.message})")
         except websockets.exceptions.ConnectionClosedError:
             if me:
-                # TODO implement client disconnect
                 self._clients.pop(me.uuid)
 
                 if me.is_leader and len(self._clients) > 0:
@@ -187,3 +201,5 @@ if __name__ == "__main__":
         asyncio.get_event_loop().run_forever()
     except KeyboardInterrupt:
         logging.info("server shutting down")
+    except:
+        logging.critical("unhandled fatal exception, server shutting down")
