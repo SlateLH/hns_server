@@ -115,6 +115,15 @@ class Server:
     async def broadcast_chat(self, name, message, time):
         await self.broadcast([["chat", name, message, time]])
 
+    async def broadcast_init_start_game(self):
+        await self.broadcast([["init_start_game"]])
+
+    async def broadcast_cancel_start_game(self):
+        await self.broadcast([["cancel_start_game"]])
+
+    async def broadcast_start_game(self):
+        await self.broadcast([["start_game"]])
+
     async def handle_client(self, websocket, path):
         logging.info("client connection request")
         me = None
@@ -136,6 +145,12 @@ class Server:
                                     await self.broadcast_update_is_ready(me.uuid, me.is_ready)
                                 elif req[0] == "chat":
                                     await self.broadcast_chat(me.name, req[1], datetime.datetime.now().strftime("%I:%M %p"))
+                                elif req[0] == "init_start_game":
+                                    await self.broadcast_init_start_game()
+                                elif req[0] == "cancel_start_game":
+                                    await self.broadcast_cancel_start_game()
+                                elif req[0] == "start_game":
+                                    await self.broadcast_start_game()
                         else:
                             logging.warning(f"invalid request from {me.uuid}: {message}")
 
